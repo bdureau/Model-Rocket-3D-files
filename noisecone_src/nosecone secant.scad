@@ -1,42 +1,63 @@
-/* secant ogive */
+/****************************************************************
+* Secant ogive nose cone (optimized version)
+*
+* alpha = arctan(R/L) - arccos(sqrt(L^2 + R^2) / 2rho)
+* y     = sqrt(rho^2 - (rho*cos(alpha) - x)^2) + rho*sin(alpha)
+*                                               (x measured from the tip)
+*
+* rho is a free parameter:
+*   rho = rhoTangent            -> tangent ogive (the original file did
+*                                  this, so it was not a real secant)
+*   rho > rhoTangent            -> classic secant ogive (meets the body
+*                                  tube at an angle)
+*   sqrt(L^2+R^2)/2 < rho < rhoTangent -> bulging ogive (wider than R)
+*
+* Optimization: the profile is a circular arc, sampled at a constant
+* angular step and revolved by ONE rotate_extrude, instead of a union
+* of 100 stacked cylinders.
+*
+* Orientation: base at Z = 0, tip at Z = L.
+*****************************************************************/
 
-/* 
-phi = (R^2+ L^2)/ 2R
+/* ---------- parameters ---------- */
+L = 100;               // nose cone length (mm)
+R = 24/2;              // base radius (mm)
+rhoTangent = (R*R + L*L) / (2*R);
+rho = 1.5 * rhoTangent; // ogive radius (mm), see above
 
-alpha = arctan(R/L) - arccos(sqrt(L^2+R^2)/2phi)
-y= sqrt(phi^2 - (phi*cos(alpha) -x)^2) + phi*sin(alpha)
+/* ---------- quality settings ---------- */
+profileSegments = 60;  // segments along the profile
+fnAround        = 100; // segments around the axis
 
-*/
+/* Do not modify anything after that unless you know what you are doing */
 
-L= 100;
-R=24/2;
-nof = 100;
+assert(rho >= sqrt(L*L + R*R) / 2,
+       "rho is too small: it must be >= sqrt(L^2 + R^2) / 2");
 
+alpha = atan(R/L) - acos(sqrt(L*L + R*R) / (2*rho));
 
-phi = (pow(R,2) + pow(L,2))/ (2*R); 
-alpha = atan(R/L) - acos(sqrt(pow(L,2)+pow(R,2)) / (2*phi));
+// Circle center in [radius, z] coordinates (z = L - x)
+rc = rho * sin(alpha);
+zc = L - rho * cos(alpha);
 
-$fn=100;
-H2=L/nof;
-x1= 0;
-x2=0;
-A1=0;
-A2= 0;
-module ogive()
-{
+// Arc angles at the base [R, 0] and at the tip [0, L]
+t0 = atan2(0 - zc, R - rc);
+t1 = atan2(L - zc, 0 - rc);
 
-	for (i=[1:nof]) {
+// Profile points [radius, z], from the base (z = 0) to the tip (z = L)
+function noseProfilePoints() =
+    [for (i = [0:profileSegments]) let(t = t0 + (t1 - t0) * i / profileSegments)
+        (i == 0)               ? [R, 0] :
+        (i == profileSegments) ? [0, L] :
+                                 [max(0, rc + rho * cos(t)), zc + rho * sin(t)]];
 
-assign(x1 = ((L/nof)*(i-1)),
-x2 = ((L/nof)*i),
-A1 = sqrt(pow(phi,2) - pow(phi*cos(alpha) -((L/nof)*(i-1)),2)) + phi*sin(alpha),
-A2 = sqrt(pow(phi,2) - pow(phi*cos(alpha) -((L/nof)*i),2)) + phi*sin(alpha),
-H1= (L/nof)*i)
-		{
-	  translate ([0,0, L- H1]) cylinder (r1 = A2, r2 = A1 , h= H2);
-		echo("i=", i ,"h=",H1,"r1:",A1,"r2:", A2, "phi:", phi, "x1:", x1, "x2", x2);
-		}
-	}
+// 2D half-section, closed along the axis
+module noseProfile() {
+    polygon(concat([[0, 0]], noseProfilePoints()));
+}
+
+module ogive() {
+    rotate_extrude($fn = fnAround) noseProfile();
 }
 
 ogive();

@@ -1,36 +1,50 @@
-/* Power serie */
+/****************************************************************
+* Power series nose cone (optimized version)
+*
+* y = R * (x/L)^n                              (x measured from the tip)
+*   n = 1    for a cone
+*   n = 0.75 for a 3/4 power
+*   n = 0.5  for a 1/2 power (parabola)
+*   n = 0    for a cylinder
+*
+* Optimization: the profile is a 2D polygon revolved by ONE
+* rotate_extrude, instead of a union of stacked cylinders.
+* For n < 1 the curve is vertical at the tip, so the samples are
+* packed towards the tip (x = L * u^q, q = 1/n, capped at 4) instead of
+* being evenly spaced: a smooth tip with the same number of segments.
+*
+* Orientation: base at Z = 0, tip at Z = L.
+*****************************************************************/
 
-/* y = R(x/L)^n
-Where:
+/* ---------- parameters ---------- */
+n = 0.3;               // power series exponent (0..1)
+L = 100;               // nose cone length (mm)
+R = 24/2;              // base radius (mm)
 
-    n = 1 for a cone
-    n = 0.75 for a 3/4 power
-    n = 0.5 for a 1/2 power (parabola)
-    n = 0 for a cylinder 
-*/
+/* ---------- quality settings ---------- */
+profileSegments = 30;  // segments along the profile
+fnAround        = 30;  // segments around the axis
 
-n= 0.3;
-L= 100;
-R=24/2;
-nof = 30;
-//A1=0;
-//A2=0;
-$fn=30;
-H2=L/nof;
+/* Do not modify anything after that unless you know what you are doing */
 
-module ogive()
-{
+assert(n >= 0, "n must be >= 0");
 
-	for (i=[1:nof]) {
+q = (n > 0) ? min(4, max(1, 1/n)) : 1;   // sample clustering exponent
 
-		assign(A1 = R* pow(((L/nof)*(i-1)/L),n),
-		A2 = R* pow(((L/nof)*(i)/L),n),
-H1= (L/nof)*i)
-		{
-	  translate ([0,0, L- H1]) cylinder (r1 = A2, r2 = A1 , h= H2);
-		echo("i=", i ,"h=",H1,"R1:",A1,"R2:", A2);
-		}
-	}
+// Profile points [radius, z], from the base (z = 0) towards the tip
+function noseProfilePoints() =
+    [for (i = [0:profileSegments - 1])
+        let(u = 1 - i / profileSegments, x = L * pow(u, q))
+            [R * pow(x / L, n), L - x]];
+
+// 2D half-section, closed along the axis (tip point [0, L] added here
+// so that n = 0 gives a clean cylinder)
+module noseProfile() {
+    polygon(concat([[0, 0]], noseProfilePoints(), [[0, L]]));
+}
+
+module ogive() {
+    rotate_extrude($fn = fnAround) noseProfile();
 }
 
 ogive();
